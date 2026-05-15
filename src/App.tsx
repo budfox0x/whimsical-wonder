@@ -4535,6 +4535,20 @@ const FaucetModal = ({ open, onClose, wallet }: { open: boolean; onClose: () => 
   const [success, setSuccess] = useState<{ explorerUrl?: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [countdown, setCountdown] = useState<string>("");
+  const [faucetEnabled, setFaucetEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('https://api.test-hub.xyz/faucet/enabled');
+        const j = await r.json();
+        if (!cancelled) setFaucetEnabled(!!j.enabled);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -4628,6 +4642,18 @@ const FaucetModal = ({ open, onClose, wallet }: { open: boolean; onClose: () => 
           </div>
         ) : !status ? (
           <p className="text-brand-text-muted text-sm py-8 text-center">Loading status…</p>
+        ) : !faucetEnabled ? (
+          <>
+            <p className="text-brand-text-muted text-sm mb-2">Claim free testnet tokens to get started</p>
+            <p className="text-xs text-brand-text-muted/70 mb-6">Get 0.01 zkLTC + 100 Points • 24hr cooldown</p>
+            <button
+              disabled
+              className="w-full py-3.5 bg-white text-black rounded-xl font-bold text-base opacity-50 cursor-not-allowed"
+            >
+              Faucet Paused
+            </button>
+            <p className="mt-3 text-xs text-brand-text-muted text-center">Faucet is temporarily paused. Check back soon!</p>
+          </>
         ) : canClaim ? (
           <>
             <p className="text-brand-text-muted text-sm mb-2">Claim free testnet tokens to get started</p>
