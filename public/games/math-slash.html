@@ -1524,10 +1524,6 @@
       window.parent && window.parent.postMessage({ type: 'litdex:mathslash:end', score: finalScore }, '*');
     } catch (_) {}
     // Note: do NOT call LitDeX.endSession here — the React parent calls /simple/end.
-    // Clear local session marker so beginActualGame() requires a fresh /simple/start.
-    if (window.LitDeX && typeof window.LitDeX.clearSession === 'function') {
-      try { window.LitDeX.clearSession(); } catch (_) {}
-    }
   }
 
   // ═════════════════════════════════════════════════════
