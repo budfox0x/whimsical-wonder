@@ -604,6 +604,7 @@ export default function BridgeCard({ className = "" }: { className?: string }) {
       await tx.wait();
 
       setProgress((p) => ({ ...p, current: needsApproval ? 4 : 3, done: true }));
+      fetchTotalBurned();
     } catch (err: any) {
       console.error(err);
       setProgress((p) => ({ ...p, failed: true }));
