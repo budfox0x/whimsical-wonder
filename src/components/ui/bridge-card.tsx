@@ -288,6 +288,8 @@ type ProgressState = {
   destChain: ChainKey;
   amount: string;
   destSymbol: string;
+  tokenSymbol: string;
+  isBurn: boolean;
 };
 
 const Stepper = ({ steps, current, done }: { steps: { key: string; label: string }[]; current: number; done: boolean }) => (
