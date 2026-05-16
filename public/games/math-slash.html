@@ -1504,8 +1504,9 @@
     // Tell the React parent. Send BOTH event names for compatibility.
     isSlicing = false;
     try {
-      window.parent && window.parent.postMessage({ type: 'GAME_OVER', score: finalScore }, '*');
-      window.parent && window.parent.postMessage({ type: 'litdex:mathslash:end', score: finalScore }, '*');
+      const payload = { type: 'GAME_OVER', score: finalScore, correct: totalCorrect, wrong: totalWrong, level: currentLevel + 1, levelName: LEVELS[currentLevel].name, best: bestScore };
+      window.parent && window.parent.postMessage(payload, '*');
+      window.parent && window.parent.postMessage({ ...payload, type: 'litdex:mathslash:end' }, '*');
     } catch (_) {}
     // Note: do NOT call LitDeX.endSession here — the React parent calls /simple/end.
   }
@@ -1589,7 +1590,6 @@
     const ok = await LitDeX.startSession();
     if (ok) {
       goScreen.classList.add('hidden');
-      document.getElementById('reward-card').style.display = 'none';
       startGame();
     } else {
       btn.textContent = 'PLAY AGAIN';
