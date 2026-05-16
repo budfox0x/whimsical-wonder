@@ -3406,6 +3406,7 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
   const [autoStart, setAutoStart] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [errMsg, setErrMsg] = useState('');
+  const liveScoreRef = useRef(0);
 
   const lowerAddr = address ? address.toLowerCase() : '';
   const mask = (a: string) => a ? `${a.slice(0, 6)}...${a.slice(-4)}` : '';
@@ -3460,6 +3461,10 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
         try { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); } catch {}
         try { (screen.orientation as any)?.unlock?.(); } catch {}
         fetchStats();
+        return;
+      }
+      if (d.type === 'SCORE_UPDATE' || d.type === 'litdex:mathslash:score') {
+        liveScoreRef.current = Number(d.score) || 0;
         return;
       }
       // Accept BOTH the new GAME_OVER event and the legacy litdex:mathslash:end event
@@ -3548,6 +3553,12 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
   };
 
   const handleExitGame = () => {
+    const liveScore = liveScoreRef.current || 0;
+    // Silent background submit per spec
+    if (lowerAddr) {
+      submitFinalScore(liveScore).catch((err) => console.warn('[MathSlash] exit submit failed:', err)).finally(() => { fetchStats(); fetchBoard(); fetchGlobal(); });
+    }
+    liveScoreRef.current = 0;
     setPlaying(false);
     setGameOver(null);
     setEndingGame(false);
@@ -3555,9 +3566,6 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
     setAutoStart(false);
     try { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); } catch {}
     try { (screen.orientation as any)?.unlock?.(); } catch {}
-    fetchStats();
-    fetchBoard();
-    fetchGlobal();
   };
 
   useEffect(() => {
@@ -3578,6 +3586,7 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
     setSentNotice('');
     setAutoStart(false);
     setStarting(true);
+    liveScoreRef.current = 0;
     try {
       const r = await fetch(`${SIMPLE_API}/simple/start`, {
         method: 'POST',
@@ -3713,15 +3722,23 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
               )}
             </div>
           ) : (
-            <div className="relative w-screen h-screen" style={{ width: '100vw', height: '100dvh' }}>
+            <div className="relative w-screen h-screen ms-playing-root" style={{ width: '100vw', height: '100dvh', touchAction: 'none', overscrollBehavior: 'none' }}>
               {!gameOver && (
-                <button onClick={handleExitGame} className="font-mono text-[11px] uppercase bg-brand-surface-2 text-brand-text-primary border border-brand-border" style={{ position: 'fixed', top: 16, right: 16, zIndex: 999999, padding: '8px 14px', borderRadius: 8 }}>EXIT</button>
+                <button
+                  onClick={handleExitGame}
+                  aria-label="Exit game"
+                  className="ms-exit-btn font-mono text-[11px] uppercase bg-brand-surface-2 text-brand-text-primary border border-brand-border"
+                  style={{ position: 'fixed', top: 16, right: 16, zIndex: 999999, borderRadius: 8 }}
+                >
+                  <span className="ms-exit-label">EXIT</span>
+                  <span className="ms-exit-x" aria-hidden>✕</span>
+                </button>
               )}
               <iframe
                 key={iframeKey}
                 src={`/games/math-slash.html?wallet=${lowerAddr}${autoStart ? '&autostart=1' : ''}`}
                 title="Math Slash"
-                style={{ border: 'none', position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+                style={{ border: 'none', position: 'absolute', inset: 0, width: '100%', height: '100%', touchAction: 'none' }}
                 allow="autoplay; fullscreen"
               />
 
@@ -3733,14 +3750,14 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   padding: 16,
                 }}>
-                  <div className="font-mono" style={{
+                  <div className="font-mono ms-go-card" style={{
                     width: '100%', maxWidth: 380,
                     background: '#0a0a0a', border: '1px solid #1f1f1f',
                     borderRadius: 16, padding: 24, textAlign: 'center', color: '#fff',
                   }}>
                     <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '0.1em', marginBottom: 12 }}>🎮 GAME OVER</div>
                     <div style={{ fontSize: 12, textTransform: 'uppercase', color: '#666', letterSpacing: '0.1em' }}>Score</div>
-                    <div style={{ fontSize: 32, fontWeight: 700, marginBottom: 18 }}>{gameOver.score}</div>
+                    <div className="ms-go-score" style={{ fontSize: 32, fontWeight: 700, marginBottom: 18 }}>{gameOver.score}</div>
 
                     <div style={{ display: 'grid', gap: 10, marginBottom: 18, textAlign: 'left' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><span style={{ color: '#777', textTransform: 'uppercase' }}>Correct / Wrong</span><span>{gameOver.correct} / {gameOver.wrong}</span></div>
@@ -3756,7 +3773,7 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
                       <div style={{ marginBottom: 20, fontSize: 12, color: '#c44' }}>{errMsg}</div>
                     )}
 
-                    <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                    <div className="ms-go-actions" style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                       <button
                         onClick={handlePlayAgain}
                         disabled={endingGame}
