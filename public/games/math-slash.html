@@ -1951,7 +1951,7 @@ const LitDeX = (() => {
     hideErr('start-error');
     hideErr('go-error');
     try {
-      const r = await fetch(`${API}/game/mathslash/start`, {
+      const r = await fetch(`${API}/simple/start`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ wallet: walletAddress }),
