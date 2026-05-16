@@ -3721,15 +3721,23 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
               )}
             </div>
           ) : (
-            <div className="relative w-screen h-screen" style={{ width: '100vw', height: '100dvh' }}>
+            <div className="relative w-screen h-screen ms-playing-root" style={{ width: '100vw', height: '100dvh', touchAction: 'none', overscrollBehavior: 'none' }}>
               {!gameOver && (
-                <button onClick={handleExitGame} className="font-mono text-[11px] uppercase bg-brand-surface-2 text-brand-text-primary border border-brand-border" style={{ position: 'fixed', top: 16, right: 16, zIndex: 999999, padding: '8px 14px', borderRadius: 8 }}>EXIT</button>
+                <button
+                  onClick={handleExitGame}
+                  aria-label="Exit game"
+                  className="ms-exit-btn font-mono text-[11px] uppercase bg-brand-surface-2 text-brand-text-primary border border-brand-border"
+                  style={{ position: 'fixed', top: 16, right: 16, zIndex: 999999, borderRadius: 8 }}
+                >
+                  <span className="ms-exit-label">EXIT</span>
+                  <span className="ms-exit-x" aria-hidden>✕</span>
+                </button>
               )}
               <iframe
                 key={iframeKey}
                 src={`/games/math-slash.html?wallet=${lowerAddr}${autoStart ? '&autostart=1' : ''}`}
                 title="Math Slash"
-                style={{ border: 'none', position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+                style={{ border: 'none', position: 'absolute', inset: 0, width: '100%', height: '100%', touchAction: 'none' }}
                 allow="autoplay; fullscreen"
               />
 
