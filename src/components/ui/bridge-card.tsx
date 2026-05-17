@@ -435,7 +435,7 @@ const ProgressModal = ({ state, onClose, onBridgeAgain }: { state: ProgressState
 };
 
 // ============== Main Bridge Card ==============
-export default function BridgeCard({ className = "" }: { className?: string }) {
+export default function BridgeCard({ className = "", onNavigate }: { className?: string; onNavigate?: (page: string) => void }) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
@@ -682,7 +682,7 @@ export default function BridgeCard({ className = "" }: { className?: string }) {
                 Games played today: <span className="text-white font-bold">{gamesPlayed ?? 0}</span> / 5
               </p>
               <button
-                onClick={() => { window.location.href = "/games"; }}
+                onClick={() => { if (onNavigate) onNavigate("games"); else window.dispatchEvent(new CustomEvent("app:navigate", { detail: "games" })); }}
                 className="mt-3 px-3 py-2 rounded-md text-[11px] font-bold uppercase tracking-widest text-white transition-all bg-black"
                 style={{ border: "1px solid #f5a623" }}
               >

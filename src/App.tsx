@@ -221,7 +221,7 @@ const SwapPage = () => {
               exit={{ x: "100%", opacity: 0 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
             >
-              <BridgeCard className="brand-glow-hover transition-all duration-500" />
+              <BridgeCard className="brand-glow-hover transition-all duration-500" onNavigate={(p) => window.dispatchEvent(new CustomEvent('app:navigate', { detail: p }))} />
             </motion.div>
           ) : (
             <motion.div
@@ -896,7 +896,7 @@ const CheckinPage = () => {
 
     </div>
   );
-};
+  };
 
 
 // --- NFT Icon (animated rotating ring) ---
@@ -4722,6 +4722,15 @@ export default function App() {
     }
     setActivePage(p);
   };
+
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      const detail = (e as CustomEvent).detail as PageID;
+      if (detail) handlePageChange(detail);
+    };
+    window.addEventListener('app:navigate', onNav);
+    return () => window.removeEventListener('app:navigate', onNav);
+  }, [activePage]);
 
   const handleFaucetClick = () => {
     if (!walletAddr) {
