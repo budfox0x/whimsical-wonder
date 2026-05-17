@@ -666,6 +666,40 @@ export default function BridgeCard({ className = "" }: { className?: string }) {
 
   return (
     <div className={cn("w-full max-w-md sm:max-w-lg mx-auto", className)}>
+      {isConnected && gamesPlayed !== null && !gamesOk && (
+        <div
+          className="mb-3 rounded-lg p-4 font-mono bg-black"
+          style={{ border: "1px solid #f5a623" }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="text-2xl leading-none">🎮</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-[#f5a623] uppercase tracking-wider">Play Required to Bridge</div>
+              <p className="text-xs text-white/80 mt-1 leading-relaxed">
+                You must play at least 5 Math Slash games today to use the bridge.
+              </p>
+              <p className="text-[11px] text-white/60 mt-2 tabular-nums">
+                Games played today: <span className="text-white font-bold">{gamesPlayed ?? 0}</span> / 5
+              </p>
+              <button
+                onClick={() => { window.location.href = "/games"; }}
+                className="mt-3 px-3 py-2 rounded-md text-[11px] font-bold uppercase tracking-widest text-white transition-all bg-black"
+                style={{ border: "1px solid #f5a623" }}
+              >
+                Play Math Slash →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isConnected && gamesOk && (
+        <div
+          className="mb-3 rounded-lg px-4 py-2.5 font-mono text-xs text-white bg-black"
+          style={{ border: BORDER }}
+        >
+          ✅ Bridge unlocked — 5 games played today!
+        </div>
+      )}
       <section
         className="rounded-lg bg-black text-white p-4 sm:p-6 md:p-8 flex flex-col gap-4 sm:gap-6 transition-all"
         style={{ border: BORDER }}
