@@ -3675,7 +3675,8 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
       <div className={`grid gap-5 ${playing ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[260px_1fr_300px]'}`}>
         {/* Stats (left) */}
         {!playing && (
-          <div className="order-2 lg:order-1 p-5 rounded-2xl font-mono bg-brand-surface border border-brand-border">
+          <div className="order-2 lg:order-1 space-y-5">
+          <div className="p-5 rounded-2xl font-mono bg-brand-surface border border-brand-border">
             <div className="flex items-center justify-between mb-4">
               <div className="text-[11px] uppercase text-brand-text-muted">Your Stats</div>
               <span className="text-[9px] uppercase px-2 py-0.5 rounded-full text-black bg-green-500 font-bold">Free to Play</span>
@@ -3719,6 +3720,8 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
                 </div>
               </>
             )}
+          </div>
+          {isConnected && <ConvertPointsCard wallet={lowerAddr} />}
           </div>
         )}
 
