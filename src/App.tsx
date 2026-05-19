@@ -328,7 +328,7 @@ const PointsPage = ({ setPage }: { setPage: (p: PageID) => void }) => {
   const deployProgress = (dailyDeploy / deployCap) * 100;
 
   const dailyMsg = pointsData ? Number(pointsData.msgDaily) : 0;
-  const msgCap = 40;
+  const msgCap = 20;
   const msgProgress = (dailyMsg / msgCap) * 100;
 
   return (
