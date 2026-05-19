@@ -3752,6 +3752,11 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
 
   const startGame = async () => {
     if (!lowerAddr || starting) return;
+    console.log('[MathSlash] Starting game for wallet:', lowerAddr);
+    if (gamesLeft <= 0) {
+      setErrMsg('No games left today');
+      return;
+    }
     setErrMsg('');
     setGameOver(null);
     setSentNotice('');
