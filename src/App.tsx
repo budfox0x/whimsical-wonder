@@ -3751,8 +3751,11 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
     setSentNotice('');
     setErrMsg('');
     setEndingGame(false);
-    setAutoStart(true);
-    setIframeKey(k => k + 1);
+    setPlaying(false);
+    setAutoStart(false);
+    resetTurnstile();
+    try { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); } catch {}
+    try { (screen.orientation as any)?.unlock?.(); } catch {}
     fetchStats();
   };
 
@@ -3763,6 +3766,7 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
     setEndingGame(false);
     setPlaying(false);
     setAutoStart(false);
+    resetTurnstile();
     try { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); } catch {}
     try { (screen.orientation as any)?.unlock?.(); } catch {}
     fetchStats();
@@ -3780,6 +3784,7 @@ const MathSlashPage = ({ onBack }: { onBack: () => void }) => {
     setEndingGame(false);
     setSentNotice('');
     setAutoStart(false);
+    resetTurnstile();
     try { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); } catch {}
     try { (screen.orientation as any)?.unlock?.(); } catch {}
   };
