@@ -1052,6 +1052,13 @@ const NFTsPage = () => {
       console.log("Minting NFT type:", nftType);
       await mintRewardNFT(nftType);
 
+      // Step 4: Deduct points from PointsSystemV6
+      try {
+        await spendUserPoints(address, cost);
+      } catch (spendErr) {
+        console.error("spendPoints failed:", spendErr);
+      }
+
       addNotif(address, { type: "nft", title: "+NFT minted!", message: `${tier.name} minted successfully` });
       showSuccess({
         title: "NFT MINTED",
