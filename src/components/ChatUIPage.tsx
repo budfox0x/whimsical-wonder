@@ -10,7 +10,6 @@ import {
   MessageCircle,
   MessageSquare,
   Paperclip,
-  PenLine,
   Search,
   Send,
   Settings,
