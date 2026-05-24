@@ -1,35 +1,147 @@
-// ChatUI page — Private + Global chat tabs powered by test-hub.xyz backend.
-import React, { useState, useEffect, useCallback, useRef } from "react";
+// ChatUI page — Private + Global chat tabs powered by LitDEX Hub backend.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Menu, MessageCircle, Phone, CircleFadingPlus, Settings, User2, ChevronUp,
-  SquarePen, ListFilter, Search, Video, Smile, Paperclip, Send, Mic, Globe,
+  Check,
+  ChevronUp,
+  DollarSign,
+  Globe,
+  Heart,
+  Menu,
+  MessageCircle,
+  MessageSquare,
+  Paperclip,
+  Search,
+  Send,
+  Settings,
+  Share2,
+  Smile,
+  SquarePen,
+  User2,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const API = "https://game.test-hub.xyz";
+const API = "http://155.133.23.14:3005";
+const CHAIN_ID_HEX = "0x1159";
+const RPC_URL = "https://liteforge.rpc.caldera.xyz/http";
+const HUB_POSTS_ADDRESS = "0x33690545061cF3759350dd2C5A0d1080D9A14D73";
+const LIT_REGISTRY_ADDRESS = "0x3E3aEE6d154f881A7418b2dA50c915C34664C2A8";
+const MESSENGER_ADDRESS = "0x69405b51963D592C6CA9350F774045d4E76c89B8";
 
-type Contact = { address: string; name: string; image?: string; message?: string };
-type Msg = { from?: string; wallet?: string; to?: string; message: string; ts?: number; id?: string };
+const SELECTOR = {
+  createPost: "0xbf95fe57",
+  likePost: "0x725009d3",
+  commentPost: "0x0418e5ff",
+  hasLiked: "0x8fb7092c",
+  reverseResolve: "0x9af8b7aa",
+  sendFriendRequest: "0x837b770a",
+  acceptFriendRequest: "0x2b5aeab7",
+  rejectFriendRequest: "0xd1b5b906",
+  sendMessage: "0xcea14c26",
+  sendZkLTC: "0x096a0efb",
+  getPendingRequests: "0xf05bfa7b",
+  friendRequests: "0xdc5bd536",
+};
 
-const menuItems = [
-  { title: "Messages", icon: MessageCircle },
-  { title: "Phone", icon: Phone },
-  { title: "Status", icon: CircleFadingPlus },
-];
+type Contact = { address: string; name: string; message?: string };
+type Msg = { id?: string | number; from?: string; wallet?: string; to?: string; message?: string; content?: string; text?: string; contentHash?: string; ts?: number; timestamp?: number | string; createdAt?: string };
+type Post = {
+  id: string;
+  postId: string;
+  author: string;
+  name?: string;
+  content: string;
+  timestamp?: number | string;
+  likeCount: number;
+  commentCount: number;
+  bountyActive: boolean;
+  liked?: boolean;
+};
+type PendingRequest = { id: string; from: string; to?: string; status?: number; sentAt?: number; name?: string };
 
-const short = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a || "");
-const avatarFor = (addr: string) => `https://api.dicebear.com/7.x/identicon/svg?seed=${addr || "x"}`;
+const short = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a || "");
+const initials = (name: string) => {
+  const label = name?.replace(".lit", "").trim() || "?";
+  if (label.startsWith("0x")) return label.slice(2, 4).toUpperCase();
+  return label.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "?";
+};
+const displayTime = (value?: number | string) => {
+  if (!value) return "";
+  const raw = typeof value === "number" && value < 10_000_000_000 ? value * 1000 : value;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+const readArray = (data: any, keys: string[]) => {
+  if (Array.isArray(data)) return data;
+  for (const key of keys) if (Array.isArray(data?.[key])) return data[key];
+  return [];
+};
+const getMessageText = (m: Msg) => m.message || m.content || m.text || m.contentHash || "";
+const stripHex = (hex: string) => hex.replace(/^0x/, "");
+const pad32 = (hex: string) => stripHex(hex).padStart(64, "0");
+const padRight32 = (hex: string) => stripHex(hex).padEnd(Math.ceil(stripHex(hex).length / 64) * 64 || 64, "0");
+const uintHex = (value: string | number | bigint) => pad32(BigInt(value).toString(16));
+const addressHex = (value: string) => pad32(stripHex(value).toLowerCase());
+const stringHex = (value: string) => {
+  const bytes = new TextEncoder().encode(value);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return uintHex(bytes.length) + padRight32(hex);
+};
+const encodeCall = (selector: string, args: { type: "uint" | "address" | "string"; value: string | number | bigint }[]) => {
+  const heads: string[] = [];
+  const tails: string[] = [];
+  args.forEach((arg) => {
+    if (arg.type === "string") {
+      const priorTailLength = tails.reduce((sum, tail) => sum + tail.length / 2, 0);
+      heads.push(uintHex(args.length * 32 + priorTailLength));
+      tails.push(stringHex(String(arg.value)));
+    } else if (arg.type === "address") {
+      heads.push(addressHex(String(arg.value)));
+    } else {
+      heads.push(uintHex(arg.value));
+    }
+  });
+  return selector + heads.join("") + tails.join("");
+};
+const parseAmount = (value: string) => {
+  const [whole = "0", fraction = ""] = value.trim().split(".");
+  return BigInt(whole || "0") * 10n ** 18n + BigInt((fraction + "0".repeat(18)).slice(0, 18));
+};
+const quantity = (value: bigint) => `0x${value.toString(16)}`;
+const decodeBool = (hex: string) => BigInt(`0x${stripHex(hex) || "0"}`) !== 0n;
+const decodeString = (hex: string) => {
+  const data = stripHex(hex);
+  if (!data || data.length < 128) return "";
+  const offset = Number(BigInt(`0x${data.slice(0, 64)}`)) * 2;
+  const length = Number(BigInt(`0x${data.slice(offset, offset + 64)}`)) * 2;
+  const body = data.slice(offset + 64, offset + 64 + length);
+  const bytes = new Uint8Array((body.match(/.{1,2}/g) || []).map((byte) => parseInt(byte, 16)));
+  return new TextDecoder().decode(bytes);
+};
+const decodeUintArray = (hex: string) => {
+  const data = stripHex(hex);
+  if (!data || data.length < 128) return [] as bigint[];
+  const offset = Number(BigInt(`0x${data.slice(0, 64)}`)) * 2;
+  const length = Number(BigInt(`0x${data.slice(offset, offset + 64)}`));
+  return Array.from({ length }, (_, i) => BigInt(`0x${data.slice(offset + 64 + i * 64, offset + 128 + i * 64)}`));
+};
+const decodeFriendRequest = (hex: string) => {
+  const data = stripHex(hex).padEnd(256, "0");
+  return {
+    from: `0x${data.slice(24, 64)}`,
+    to: `0x${data.slice(88, 128)}`,
+    status: Number(BigInt(`0x${data.slice(128, 192)}`)),
+    sentAt: Number(BigInt(`0x${data.slice(192, 256)}`)),
+  };
+};
 
-const Avatar: React.FC<{ src?: string; name: string; size?: number }> = ({ src, name, size = 48 }) => (
+const Avatar: React.FC<{ name: string; size?: number }> = ({ name, size = 42 }) => (
   <div
-    className="rounded-full overflow-hidden shrink-0 bg-zinc-800 flex items-center justify-center text-white text-sm font-semibold"
+    className="rounded-full shrink-0 bg-white/10 border border-white/10 flex items-center justify-center text-brand-text-primary text-xs font-semibold"
     style={{ width: size, height: size }}
   >
-    {src ? (
-      <img src={src} alt={name} className="w-full h-full object-cover" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
-    ) : (
-      <span>{(name || "?")[0]}</span>
-    )}
+    {initials(name)}
   </div>
 );
 
@@ -37,7 +149,7 @@ const IconBtn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { childr
   <button
     {...p}
     className={cn(
-      "h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-300 hover:bg-white/5 hover:text-white transition-colors",
+      "h-9 w-9 inline-flex items-center justify-center rounded-md text-brand-text-muted hover:bg-white/5 hover:text-brand-text-primary transition-colors disabled:opacity-40 disabled:pointer-events-none",
       className
     )}
   >
@@ -47,248 +159,467 @@ const IconBtn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { childr
 
 export default function ChatUIPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [tab, setTab] = useState<"private" | "global">("private");
-  const [wallet, setWallet] = useState<string>("");
+  const [tab, setTab] = useState<"private" | "global">("global");
+  const [wallet, setWallet] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [pending, setPending] = useState<PendingRequest[]>([]);
   const [current, setCurrent] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
+  const [commentOpen, setCommentOpen] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [postContent, setPostContent] = useState("");
+  const [addBounty, setAddBounty] = useState(false);
+  const [likeReward, setLikeReward] = useState("0.01");
+  const [commentReward, setCommentReward] = useState("0.01");
+  const [addFriendOpen, setAddFriendOpen] = useState(false);
+  const [friendName, setFriendName] = useState("");
+  const [tipOpen, setTipOpen] = useState(false);
+  const [tipAmount, setTipAmount] = useState("0.01");
+  const [tipNote, setTipNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const namesRef = useRef<Record<string, string>>({});
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  // Connect wallet (read-only — use whatever's connected)
+  const totalBudget = useMemo(() => {
+    if (!addBounty) return "0";
+    const total = (Number(likeReward || 0) + Number(commentReward || 0)).toFixed(4);
+    return Number.isFinite(Number(total)) ? total : "0";
+  }, [addBounty, likeReward, commentReward]);
+
+  const ensureChain = useCallback(async () => {
+    const eth: any = (window as any).ethereum;
+    if (!eth) throw new Error("Wallet not found");
+    try {
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_ID_HEX }] });
+    } catch (err: any) {
+      if (err?.code === 4902) {
+        await eth.request({
+          method: "wallet_addEthereumChain",
+          params: [{ chainId: CHAIN_ID_HEX, chainName: "LiteForge", rpcUrls: [RPC_URL], nativeCurrency: { name: "zkLTC", symbol: "zkLTC", decimals: 18 } }],
+        });
+      } else {
+        throw err;
+      }
+    }
+  }, []);
+
+  const readContract = useCallback(async (address: string, data: string) => {
+    const result = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: address, data }, "latest"] }),
+    });
+    const json = await result.json();
+    if (json.error) throw new Error(json.error.message || "Contract read failed");
+    return json.result as string;
+  }, []);
+
+  const writeContract = useCallback(async (address: string, data: string, value = 0n) => {
+    const eth: any = (window as any).ethereum;
+    if (!eth) throw new Error("Wallet not found");
+    await ensureChain();
+    const [from] = await eth.request({ method: "eth_requestAccounts" });
+    const hash = await eth.request({ method: "eth_sendTransaction", params: [{ from, to: address, data, value: quantity(value) }] });
+    return hash as string;
+  }, [ensureChain]);
+
+  const resolveName = useCallback(async (address: string) => {
+    if (!address) return "";
+    const key = address.toLowerCase();
+    if (namesRef.current[key]) return namesRef.current[key];
+    try {
+      const data = encodeCall(SELECTOR.reverseResolve, [{ type: "address", value: address }]);
+      const name = decodeString(await readContract(LIT_REGISTRY_ADDRESS, data));
+      namesRef.current[key] = name || short(address);
+    } catch {
+      namesRef.current[key] = short(address);
+    }
+    return namesRef.current[key];
+  }, [readContract]);
+
+  const mapContact = useCallback(async (item: any): Promise<Contact | null> => {
+    const address = typeof item === "string" ? item : item.address || item.wallet || item.walletAddress || item.friend || item.from || item.to || "";
+    if (!address) return null;
+    const name = item.name || item.litName || item.username || await resolveName(address);
+    return { address, name, message: item.lastMessage || item.preview || item.message || short(address) };
+  }, [resolveName]);
+
   useEffect(() => {
     const eth: any = (window as any).ethereum;
     if (!eth) return;
-    eth.request({ method: "eth_accounts" }).then((accs: string[]) => {
-      if (accs?.[0]) setWallet(accs[0]);
-    }).catch(() => {});
+    eth.request({ method: "eth_accounts" }).then((accs: string[]) => setWallet(accs?.[0] || "")).catch(() => {});
     const onAcc = (accs: string[]) => setWallet(accs?.[0] || "");
     eth.on?.("accountsChanged", onAcc);
     return () => eth.removeListener?.("accountsChanged", onAcc);
   }, []);
 
-  // Load contacts when tab/wallet changes
-  const loadContacts = useCallback(async () => {
+  const loadPosts = useCallback(async () => {
     try {
-      const url = tab === "private"
-        ? `${API}/hub/private/contacts/${wallet}`
-        : `${API}/hub/global/users`;
-      if (tab === "private" && !wallet) { setContacts([]); return; }
-      const r = await fetch(url);
+      const r = await fetch(`${API}/hub/posts`);
       const j = await r.json();
-      const arr: any[] = Array.isArray(j) ? j : (j.contacts || j.users || j.data || []);
-      const mapped: Contact[] = arr.map((u: any) => {
-        const address = u.address || u.wallet || u.walletAddress || u.from || "";
-        const name = u.name || u.username || u.displayName || short(address);
+      const arr = readArray(j, ["posts", "data", "items"]);
+      const mapped = await Promise.all(arr.map(async (p: any, index: number): Promise<Post> => {
+        const author = p.author || p.wallet || p.walletAddress || p.from || p.creator || "";
+        const id = String(p.id ?? p.postId ?? index);
+        const name = p.name || p.litName || await resolveName(author);
+        let liked = Boolean(p.liked || p.hasLiked);
+        if (wallet && !liked) {
+          try {
+            const data = encodeCall(SELECTOR.hasLiked, [{ type: "uint", value: id }, { type: "address", value: wallet }]);
+            liked = decodeBool(await readContract(HUB_POSTS_ADDRESS, data));
+          } catch { /* keep backend value */ }
+        }
         return {
-          address,
+          id,
+          postId: id,
+          author,
           name,
-          image: u.image || u.avatar || avatarFor(address),
-          message: u.lastMessage || u.message || "",
+          content: p.content || p.message || p.text || "",
+          timestamp: p.timestamp || p.createdAt || p.ts,
+          likeCount: Number(p.likeCount ?? p.likes ?? 0),
+          commentCount: Number(p.commentCount ?? p.comments ?? 0),
+          bountyActive: Boolean(p.bountyActive || p.hasBounty || p.bounty),
+          liked,
         };
-      }).filter((c) => c.address);
-      setContacts(mapped);
+      }));
+      setPosts(mapped);
     } catch {
-      setContacts([]);
+      setPosts([]);
     }
-  }, [tab, wallet]);
+  }, [resolveName, wallet]);
 
-  useEffect(() => { loadContacts(); setCurrent(null); setMessages([]); }, [loadContacts]);
-
-  // Load messages on chat open / poll
-  const loadMessages = useCallback(async () => {
+  const loadPrivate = useCallback(async () => {
+    if (!wallet) { setContacts([]); setPending([]); return; }
     try {
-      let url: string;
-      if (tab === "private") {
-        if (!wallet || !current?.address) return;
-        url = `${API}/hub/private/messages/${wallet}/${current.address}`;
-      } else {
-        url = `${API}/hub/global/messages`;
-      }
-      const r = await fetch(url);
+      const r = await fetch(`${API}/hub/messenger/friends/${wallet}`);
       const j = await r.json();
-      const arr: any[] = Array.isArray(j) ? j : (j.messages || j.data || []);
-      setMessages(arr);
-    } catch { /* ignore */ }
-  }, [tab, wallet, current?.address]);
+      const arr = readArray(j, ["friends", "contacts", "data"]);
+      const mapped = (await Promise.all(arr.map(mapContact))).filter(Boolean) as Contact[];
+      setContacts(mapped);
+    } catch { setContacts([]); }
+
+    try {
+      const ids = decodeUintArray(await readContract(MESSENGER_ADDRESS, encodeCall(SELECTOR.getPendingRequests, [{ type: "address", value: wallet }])));
+      const requests = await Promise.all(ids.map(async (id) => {
+        const req = decodeFriendRequest(await readContract(MESSENGER_ADDRESS, encodeCall(SELECTOR.friendRequests, [{ type: "uint", value: id }])));
+        return { id: id.toString(), from: req.from, to: req.to, status: req.status, sentAt: req.sentAt, name: await resolveName(req.from) };
+      }));
+      setPending(requests.filter((req) => req.from.toLowerCase() !== wallet.toLowerCase()));
+    } catch { setPending([]); }
+  }, [mapContact, resolveName, wallet]);
+
+  const loadConversation = useCallback(async () => {
+    if (!wallet || !current?.address) return;
+    try {
+      const r = await fetch(`${API}/hub/messenger/conversation/${wallet}/${current.address}`);
+      const j = await r.json();
+      setMessages(readArray(j, ["messages", "conversation", "data"]));
+    } catch { setMessages([]); }
+  }, [current?.address, wallet]);
 
   useEffect(() => {
-    if (tab === "private" && !current) return;
-    loadMessages();
-    const id = setInterval(loadMessages, 5000);
+    if (tab === "global") {
+      loadPosts();
+      const id = setInterval(loadPosts, 15_000);
+      return () => clearInterval(id);
+    }
+    loadPrivate();
+    const id = setInterval(loadPrivate, 15_000);
     return () => clearInterval(id);
-  }, [loadMessages, tab, current]);
+  }, [loadPosts, loadPrivate, tab]);
+
+  useEffect(() => {
+    setCurrent(null);
+    setMessages([]);
+    setSearch("");
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "private" || !current) return;
+    loadConversation();
+    const id = setInterval(loadConversation, 15_000);
+    return () => clearInterval(id);
+  }, [current, loadConversation, tab]);
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, posts, commentOpen]);
 
-  const send = async () => {
-    const text = draft.trim();
-    if (!text) return;
+  const likePost = async (post: Post) => {
+    if (post.liked) return;
+    setBusy(true);
     try {
-      if (tab === "private") {
-        if (!wallet || !current?.address) return;
-        await fetch(`${API}/hub/private/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ from: wallet, to: current.address, message: text }),
-        });
-      } else {
-        if (!wallet) return;
-        await fetch(`${API}/hub/global/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wallet, message: text }),
-        });
-      }
-      setDraft("");
-      loadMessages();
-    } catch { /* ignore */ }
+      await writeContract(HUB_POSTS_ADDRESS, encodeCall(SELECTOR.likePost, [{ type: "uint", value: post.postId }]));
+      setPosts((list) => list.map((p) => p.id === post.id ? { ...p, liked: true, likeCount: p.likeCount + 1 } : p));
+    } finally { setBusy(false); }
   };
 
-  const filtered = contacts.filter((c) =>
-    !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.address.toLowerCase().includes(search.toLowerCase())
-  );
+  const commentPost = async (postId: string) => {
+    const text = commentDraft.trim();
+    if (!text) return;
+    setBusy(true);
+    try {
+      await writeContract(HUB_POSTS_ADDRESS, encodeCall(SELECTOR.commentPost, [{ type: "uint", value: postId }, { type: "string", value: text }]));
+      setPosts((list) => list.map((p) => p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p));
+      setCommentDraft("");
+      setCommentOpen(null);
+    } finally { setBusy(false); }
+  };
 
-  const headerName = current?.name || (tab === "global" ? "Global Chat" : "Select a chat");
-  const headerImg = current?.image || (tab === "global" ? avatarFor("global") : undefined);
+  const openCreatePost = () => {
+    const text = draft.trim();
+    if (!text) return;
+    setPostContent(text);
+    setCreateOpen(true);
+  };
+
+  const createPost = async () => {
+    const content = postContent.trim();
+    if (!content) return;
+    setBusy(true);
+    try {
+      const likeWei = addBounty ? parseAmount(likeReward || "0") : 0n;
+      const commentWei = addBounty ? parseAmount(commentReward || "0") : 0n;
+      const budgetWei = addBounty ? parseAmount(totalBudget || "0") : 0n;
+      await writeContract(HUB_POSTS_ADDRESS, encodeCall(SELECTOR.createPost, [{ type: "string", value: content }, { type: "uint", value: likeWei }, { type: "uint", value: commentWei }]), budgetWei);
+      setDraft("");
+      setPostContent("");
+      setCreateOpen(false);
+      loadPosts();
+    } finally { setBusy(false); }
+  };
+
+  const addFriend = async () => {
+    const clean = friendName.trim().replace(/^@/, "");
+    if (!clean) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/hub/name/resolve/${encodeURIComponent(clean)}`);
+      const j = await r.json();
+      const resolved = j.address || j.wallet || j.walletAddress || j.data?.address;
+      if (!resolved) throw new Error("Name not found");
+      await writeContract(MESSENGER_ADDRESS, encodeCall(SELECTOR.sendFriendRequest, [{ type: "address", value: resolved }]));
+      setFriendName("");
+      setAddFriendOpen(false);
+    } finally { setBusy(false); }
+  };
+
+  const respondRequest = async (reqId: string, accept: boolean) => {
+    setBusy(true);
+    try {
+      await writeContract(MESSENGER_ADDRESS, encodeCall(accept ? SELECTOR.acceptFriendRequest : SELECTOR.rejectFriendRequest, [{ type: "uint", value: reqId }]));
+      setPending((list) => list.filter((req) => req.id !== reqId));
+      loadPrivate();
+    } finally { setBusy(false); }
+  };
+
+  const sendPrivate = async () => {
+    const text = draft.trim();
+    if (!text || !current?.address) return;
+    setBusy(true);
+    try {
+      await writeContract(MESSENGER_ADDRESS, encodeCall(SELECTOR.sendMessage, [{ type: "address", value: current.address }, { type: "string", value: text }, { type: "string", value: "text" }]));
+      setDraft("");
+      loadConversation();
+    } finally { setBusy(false); }
+  };
+
+  const sendTip = async () => {
+    if (!current?.address) return;
+    setBusy(true);
+    try {
+      await writeContract(MESSENGER_ADDRESS, encodeCall(SELECTOR.sendZkLTC, [{ type: "address", value: current.address }, { type: "string", value: tipNote || "zkLTC" }]), parseAmount(tipAmount || "0"));
+      setTipOpen(false);
+      setTipNote("");
+    } finally { setBusy(false); }
+  };
+
+  const sharePost = (post: Post) => {
+    const text = `${post.content}\n\nlitdex.test-hub.xyz`;
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+  };
+
+  const filtered = contacts.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.address.toLowerCase().includes(search.toLowerCase()));
   const showChat = tab === "global" || !!current;
+  const headerName = tab === "global" ? "Global" : current?.name || "Select a chat";
 
   return (
     <div className="w-full min-h-[calc(100vh-120px)] mt-20 px-2 sm:px-4">
-      <div className="max-w-[1480px] mx-auto bg-zinc-950 border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+      <div className="max-w-[1480px] mx-auto bg-brand-bg border border-brand-border rounded-2xl overflow-hidden shadow-2xl">
         <div className="flex h-[calc(100vh-160px)] min-h-[600px]">
-          {/* Sidebar */}
-          <aside className={cn("shrink-0 border-r border-white/10 bg-zinc-950 flex flex-col transition-[width] duration-200", sidebarOpen ? "w-[200px]" : "w-[60px]")}>
+          <aside className={cn("shrink-0 border-r border-brand-border bg-brand-bg flex flex-col transition-[width] duration-200", sidebarOpen ? "w-[200px]" : "w-[60px]")}>
             <div className="p-3">
-              {sidebarOpen && <div className="text-[11px] font-semibold text-zinc-400 px-2 py-1.5">Navigate</div>}
-              <button onClick={() => setSidebarOpen((v) => !v)} className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-zinc-300 hover:bg-white/5 hover:text-white">
+              {sidebarOpen && <div className="text-[11px] font-semibold text-brand-text-muted px-2 py-1.5">Navigate</div>}
+              <button onClick={() => setSidebarOpen((v) => !v)} className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-brand-text-muted hover:bg-white/5 hover:text-brand-text-primary">
                 <Menu size={18} />
               </button>
-              {menuItems.map((m) => (
-                <a key={m.title} href="#" onClick={(e) => e.preventDefault()} className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-zinc-300 hover:bg-white/5 hover:text-white">
-                  <m.icon size={18} />
-                  {sidebarOpen && <span className="text-sm">{m.title}</span>}
-                </a>
-              ))}
+              <button onClick={() => setTab("private")} className={cn("w-full flex items-center gap-3 px-2 py-2 rounded-md", tab === "private" ? "bg-white/10 text-brand-text-primary" : "text-brand-text-muted hover:bg-white/5 hover:text-brand-text-primary")}>
+                <MessageCircle size={18} />{sidebarOpen && <span className="text-sm">Private</span>}
+              </button>
+              <button onClick={() => setTab("global")} className={cn("w-full flex items-center gap-3 px-2 py-2 rounded-md", tab === "global" ? "bg-white/10 text-brand-text-primary" : "text-brand-text-muted hover:bg-white/5 hover:text-brand-text-primary")}>
+                <Globe size={18} />{sidebarOpen && <span className="text-sm">Global</span>}
+              </button>
             </div>
             <div className="mt-auto p-3 space-y-1">
-              <button className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-zinc-300 hover:bg-white/5 hover:text-white">
-                <Settings size={18} />
-                {sidebarOpen && <span className="text-sm">Settings</span>}
+              <button className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-brand-text-muted hover:bg-white/5 hover:text-brand-text-primary">
+                <Settings size={18} />{sidebarOpen && <span className="text-sm">Settings</span>}
               </button>
-              <button className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-zinc-300 hover:bg-white/5 hover:text-white">
-                <User2 size={18} />
-                {sidebarOpen && (<><span className="text-sm truncate">{short(wallet) || "Not connected"}</span><ChevronUp size={16} className="ml-auto" /></>)}
+              <button className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-brand-text-muted hover:bg-white/5 hover:text-brand-text-primary">
+                <User2 size={18} />{sidebarOpen && (<><span className="text-sm truncate">{short(wallet) || "Not connected"}</span><ChevronUp size={16} className="ml-auto" /></>)}
               </button>
             </div>
           </aside>
 
-          {/* Chat list */}
-          <section className="w-[300px] shrink-0 border-r border-white/10 bg-zinc-950 flex flex-col">
-            <div className="h-12 px-3 flex items-center">
-              <p className="text-sm font-medium text-zinc-200">{tab === "private" ? "Private" : "Global"}</p>
-              <div className="flex-1 flex items-center justify-center gap-1">
-                <IconBtn aria-label="New" onClick={() => setTab("private")}><SquarePen size={16} /></IconBtn>
-                <IconBtn aria-label="Filter"><ListFilter size={16} /></IconBtn>
-              </div>
-              <button
-                onClick={() => setTab(tab === "private" ? "global" : "private")}
-                className={cn(
-                  "px-2.5 h-8 inline-flex items-center gap-1.5 rounded-md text-xs font-semibold transition-colors",
-                  tab === "global" ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+          <section className="w-[300px] shrink-0 border-r border-brand-border bg-brand-bg flex flex-col">
+            <div className="h-12 px-3 flex items-center gap-2">
+              <p className="text-sm font-medium text-brand-text-primary">{tab === "private" ? "Private" : "Global"}</p>
+              <div className="ml-auto flex items-center gap-1">
+                {tab === "private" && (
+                  <button onClick={() => setAddFriendOpen(true)} className="relative h-9 w-9 inline-flex items-center justify-center rounded-md text-brand-text-muted hover:bg-white/5 hover:text-brand-text-primary">
+                    <SquarePen size={16} />
+                    {pending.length > 0 && <span className="absolute -right-1 -top-1 min-w-4 h-4 rounded-full bg-brand-danger px-1 text-[10px] text-brand-text-primary leading-4 text-center">{pending.length}</span>}
+                  </button>
                 )}
-              >
-                <Globe size={14} /> Global
-              </button>
-            </div>
-
-            <div className="relative px-3 pb-3">
-              <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search or start new chat"
-                className="w-full h-9 pl-9 pr-3 rounded-md bg-zinc-900 border border-white/10 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-white/20"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {filtered.length === 0 && (
-                <div className="px-4 py-6 text-xs text-zinc-500 text-center">
-                  {tab === "private" && !wallet ? "Connect wallet to see contacts" : "No contacts found"}
-                </div>
-              )}
-              {filtered.map((contact) => (
-                <button
-                  key={contact.address}
-                  onClick={() => setCurrent(contact)}
-                  className={cn("px-3 w-full py-2 text-left transition-colors", current?.address === contact.address ? "bg-white/5" : "hover:bg-white/5")}
-                >
-                  <div className="flex flex-row gap-2 items-start">
-                    <Avatar src={contact.image} name={contact.name} size={48} />
-                    <div className="min-w-0 py-1">
-                      <div className="text-[15px] font-semibold text-zinc-100 leading-tight truncate">{contact.name}</div>
-                      <div className="text-xs text-zinc-400 mt-1 line-clamp-2">{contact.message || short(contact.address)}</div>
-                    </div>
-                  </div>
+                <button onClick={() => setTab(tab === "private" ? "global" : "private")} className="px-2.5 h-8 inline-flex items-center gap-1.5 rounded-md text-xs font-semibold bg-white/5 text-brand-text-primary hover:bg-white/10 transition-colors">
+                  {tab === "private" ? <Globe size={14} /> : <MessageCircle size={14} />}{tab === "private" ? "Global" : "Private"}
                 </button>
-              ))}
+              </div>
             </div>
+
+            {tab === "private" ? (
+              <>
+                <div className="relative px-3 pb-3">
+                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-text-muted" />
+                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contacts" className="w-full h-9 pl-9 pr-3 rounded-md bg-brand-surface border border-brand-border text-sm text-brand-text-primary placeholder:text-brand-text-muted outline-none focus:border-white/20" />
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {pending.map((req) => (
+                    <div key={req.id} className="mx-3 mb-2 rounded-md border border-brand-border bg-white/5 p-2">
+                      <div className="flex items-center gap-2">
+                        <Avatar name={req.name || req.from} size={34} />
+                        <div className="min-w-0 flex-1"><div className="text-xs font-semibold text-brand-text-primary truncate">{req.name || short(req.from)}</div><div className="text-[11px] text-brand-text-muted">Friend request</div></div>
+                        <IconBtn aria-label="Accept" disabled={busy} onClick={() => respondRequest(req.id, true)} className="h-8 w-8 text-brand-text-primary"><Check size={15} /></IconBtn>
+                        <IconBtn aria-label="Reject" disabled={busy} onClick={() => respondRequest(req.id, false)} className="h-8 w-8"><X size={15} /></IconBtn>
+                      </div>
+                    </div>
+                  ))}
+                  {filtered.length === 0 && <div className="px-4 py-6 text-xs text-brand-text-muted text-center">{wallet ? "No contacts found" : "Connect wallet to see contacts"}</div>}
+                  {filtered.map((contact) => (
+                    <button key={contact.address} onClick={() => setCurrent(contact)} className={cn("px-3 w-full py-2 text-left transition-colors", current?.address === contact.address ? "bg-white/10" : "hover:bg-white/5")}>
+                      <div className="flex gap-2 items-start">
+                        <Avatar name={contact.name} size={44} />
+                        <div className="min-w-0 py-1"><div className="text-[15px] font-semibold text-brand-text-primary leading-tight truncate">{contact.name}</div><div className="text-xs text-brand-text-muted mt-1 line-clamp-2">{contact.message || short(contact.address)}</div></div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center px-6 text-center text-sm text-brand-text-muted">Global posts are shown in the chat panel.</div>
+            )}
           </section>
 
-          {/* Chat window */}
-          <section className="flex-1 flex flex-col bg-zinc-950 min-w-0">
-            <div className="h-16 border-b border-white/10 flex items-center px-3">
-              <Avatar src={headerImg} name={headerName} size={48} />
+          <section className="flex-1 flex flex-col bg-brand-bg min-w-0">
+            <div className="h-16 border-b border-brand-border flex items-center px-3">
+              <Avatar name={headerName} size={44} />
               <div className="ml-2 min-w-0">
-                <div className="text-[15px] font-semibold text-zinc-100 truncate">{headerName}</div>
-                <div className="text-xs text-zinc-400 truncate">{tab === "global" ? "Public room" : (current ? short(current.address) : "Contact Info")}</div>
-              </div>
-              <div className="flex-grow flex justify-end gap-1">
-                <IconBtn aria-label="Video call"><Video size={18} /></IconBtn>
-                <IconBtn aria-label="Phone call"><Phone size={18} /></IconBtn>
-                <IconBtn aria-label="Search in chat"><Search size={18} /></IconBtn>
+                <div className="text-[15px] font-semibold text-brand-text-primary truncate">{headerName}</div>
+                <div className="text-xs text-brand-text-muted truncate">{tab === "global" ? "Public posts" : current ? short(current.address) : "Contact Info"}</div>
               </div>
             </div>
 
-            <div ref={bodyRef} className="flex-1 bg-zinc-950 overflow-y-auto px-4 py-4 space-y-2">
-              {!showChat && (
-                <div className="h-full flex items-center justify-center text-zinc-600 text-sm">Select a chat to start messaging</div>
-              )}
-              {showChat && messages.map((m, i) => {
+            <div ref={bodyRef} className="flex-1 bg-brand-bg overflow-y-auto px-4 py-4 space-y-3">
+              {!showChat && <div className="h-full flex items-center justify-center text-brand-text-muted text-sm">Select a chat to start messaging</div>}
+
+              {tab === "global" && posts.map((post) => (
+                <div key={post.id} className="flex justify-start">
+                  <div className="relative max-w-[760px] w-fit rounded-lg border border-brand-border bg-brand-surface px-3 py-3 text-sm text-brand-text-primary">
+                    {post.bountyActive && <div className="absolute right-3 top-3 text-emerald-400" title="Bounty active">💰</div>}
+                    <div className="flex items-center gap-2 pr-8">
+                      <Avatar name={post.name || post.author} size={34} />
+                      <div className="min-w-0"><span className="font-semibold">{post.name || short(post.author)}</span><span className="ml-2 text-xs text-brand-text-muted">{displayTime(post.timestamp)}</span></div>
+                    </div>
+                    <div className="mt-2 whitespace-pre-wrap break-words leading-relaxed">{post.content}</div>
+                    <div className="mt-3 flex items-center gap-3 text-xs text-brand-text-muted">
+                      <button disabled={busy || post.liked} onClick={() => likePost(post)} className={cn("inline-flex items-center gap-1 hover:text-brand-text-primary disabled:cursor-default", post.liked && "opacity-50")}><Heart size={14} /> {post.likeCount}</button>
+                      <button onClick={() => setCommentOpen(commentOpen === post.id ? null : post.id)} className="inline-flex items-center gap-1 hover:text-brand-text-primary"><MessageSquare size={14} /> {post.commentCount}</button>
+                      <button onClick={() => sharePost(post)} className="inline-flex items-center gap-1 hover:text-brand-text-primary"><Share2 size={14} /> Share</button>
+                    </div>
+                    {commentOpen === post.id && (
+                      <div className="mt-3 flex items-center gap-2 border-t border-brand-border pt-3">
+                        <input value={commentDraft} onChange={(e) => setCommentDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") commentPost(post.id); }} placeholder="Write a comment" className="min-w-0 flex-1 h-9 rounded-md bg-brand-bg border border-brand-border px-3 text-sm text-brand-text-primary placeholder:text-brand-text-muted outline-none" />
+                        <IconBtn aria-label="Send comment" disabled={busy} onClick={() => commentPost(post.id)}><Send size={16} /></IconBtn>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {tab === "private" && showChat && messages.map((m, i) => {
                 const mine = (m.from || m.wallet || "").toLowerCase() === wallet.toLowerCase();
                 return (
                   <div key={m.id || i} className={cn("flex", mine ? "justify-end" : "justify-start")}>
-                    <div className={cn("max-w-[70%] rounded-lg px-3 py-2 text-sm", mine ? "bg-emerald-600/30 text-emerald-50" : "bg-zinc-800 text-zinc-100")}>
-                      {tab === "global" && !mine && (
-                        <div className="text-[10px] text-zinc-400 mb-0.5 font-mono">{short(m.from || m.wallet || "")}</div>
-                      )}
-                      <div className="break-words whitespace-pre-wrap">{m.message}</div>
+                    <div className={cn("max-w-[70%] rounded-lg px-3 py-2 text-sm border", mine ? "bg-white/10 border-white/10 text-brand-text-primary" : "bg-brand-surface border-brand-border text-brand-text-primary")}>
+                      <div className="break-words whitespace-pre-wrap">{getMessageText(m)}</div>
+                      <div className="mt-1 text-[10px] text-brand-text-muted text-right">{displayTime(m.timestamp || m.createdAt || m.ts)}</div>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            <div className="flex items-center gap-1 px-2 py-2 border-t border-white/10">
+            <div className="flex items-center gap-1 px-2 py-2 border-t border-brand-border">
               <IconBtn aria-label="Emoji"><Smile size={18} /></IconBtn>
               <IconBtn aria-label="Attach"><Paperclip size={18} /></IconBtn>
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") send(); }}
-                disabled={!showChat}
-                placeholder={showChat ? "Type a message" : "Select a chat first"}
-                className="flex-grow h-10 px-3 bg-transparent border-0 outline-none text-sm text-zinc-100 placeholder:text-zinc-500 disabled:opacity-50"
-              />
-              <IconBtn aria-label="Send" onClick={send}><Send size={18} /></IconBtn>
-              <IconBtn aria-label="Voice"><Mic size={18} /></IconBtn>
+              {tab === "private" && <IconBtn aria-label="Send zkLTC" disabled={!current} onClick={() => setTipOpen(true)}><DollarSign size={18} /></IconBtn>}
+              <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (tab === "global" ? openCreatePost() : sendPrivate()); }} disabled={!showChat || busy} placeholder={showChat ? (tab === "global" ? "Create a global post" : "Type a message") : "Select a chat first"} className="flex-grow h-10 px-3 bg-transparent border-0 outline-none text-sm text-brand-text-primary placeholder:text-brand-text-muted disabled:opacity-50" />
+              <IconBtn aria-label="Send" disabled={!showChat || busy} onClick={tab === "global" ? openCreatePost : sendPrivate}><Send size={18} /></IconBtn>
             </div>
           </section>
         </div>
+      </div>
+
+      {createOpen && (
+        <Modal title="Create Post" onClose={() => setCreateOpen(false)}>
+          <textarea value={postContent} onChange={(e) => setPostContent(e.target.value)} className="h-28 w-full rounded-md bg-brand-bg border border-brand-border p-3 text-sm text-brand-text-primary outline-none" />
+          <label className="mt-3 flex items-center gap-2 text-sm text-brand-text-primary"><input type="checkbox" checked={addBounty} onChange={(e) => setAddBounty(e.target.checked)} /> Add Bounty?</label>
+          {addBounty && <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2"><Field label="Like reward" value={likeReward} setValue={setLikeReward} /><Field label="Comment reward" value={commentReward} setValue={setCommentReward} /><div><div className="mb-1 text-xs text-brand-text-muted">Total budget</div><div className="h-10 rounded-md border border-brand-border bg-white/5 px-3 text-sm text-brand-text-primary flex items-center">{totalBudget} zkLTC</div></div></div>}
+          <button disabled={busy} onClick={createPost} className="mt-4 w-full h-10 rounded-md bg-brand-teal text-brand-bg text-sm font-semibold disabled:opacity-50">Submit</button>
+        </Modal>
+      )}
+
+      {addFriendOpen && (
+        <Modal title="Add Friend" onClose={() => setAddFriendOpen(false)}>
+          <input value={friendName} onChange={(e) => setFriendName(e.target.value)} placeholder="name.lit" className="w-full h-10 rounded-md bg-brand-bg border border-brand-border px-3 text-sm text-brand-text-primary placeholder:text-brand-text-muted outline-none" />
+          <button disabled={busy} onClick={addFriend} className="mt-4 w-full h-10 rounded-md bg-brand-teal text-brand-bg text-sm font-semibold disabled:opacity-50">Send request</button>
+        </Modal>
+      )}
+
+      {tipOpen && (
+        <Modal title="Send zkLTC" onClose={() => setTipOpen(false)}>
+          <Field label="Amount" value={tipAmount} setValue={setTipAmount} />
+          <div className="mt-3"><div className="mb-1 text-xs text-brand-text-muted">Note</div><input value={tipNote} onChange={(e) => setTipNote(e.target.value)} className="w-full h-10 rounded-md bg-brand-bg border border-brand-border px-3 text-sm text-brand-text-primary outline-none" /></div>
+          <button disabled={busy} onClick={sendTip} className="mt-4 w-full h-10 rounded-md bg-brand-teal text-brand-bg text-sm font-semibold disabled:opacity-50">Send</button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, value, setValue }: { label: string; value: string; setValue: (value: string) => void }) {
+  return <div><div className="mb-1 text-xs text-brand-text-muted">{label}</div><input value={value} onChange={(e) => setValue(e.target.value)} className="w-full h-10 rounded-md bg-brand-bg border border-brand-border px-3 text-sm text-brand-text-primary outline-none" /></div>;
+}
+
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="w-full max-w-md rounded-lg border border-brand-border bg-brand-surface p-4 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between"><h2 className="text-base font-semibold text-brand-text-primary">{title}</h2><IconBtn aria-label="Close" onClick={onClose}><X size={18} /></IconBtn></div>
+        {children}
       </div>
     </div>
   );
