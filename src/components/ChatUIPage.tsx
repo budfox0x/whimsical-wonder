@@ -78,6 +78,63 @@ const readArray = (data: any, keys: string[]) => {
   return [];
 };
 const getMessageText = (m: Msg) => m.message || m.content || m.text || m.contentHash || "";
+const stripHex = (hex: string) => hex.replace(/^0x/, "");
+const pad32 = (hex: string) => stripHex(hex).padStart(64, "0");
+const padRight32 = (hex: string) => stripHex(hex).padEnd(Math.ceil(stripHex(hex).length / 64) * 64 || 64, "0");
+const uintHex = (value: string | number | bigint) => pad32(BigInt(value).toString(16));
+const addressHex = (value: string) => pad32(stripHex(value).toLowerCase());
+const stringHex = (value: string) => {
+  const bytes = new TextEncoder().encode(value);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return uintHex(bytes.length) + padRight32(hex);
+};
+const encodeCall = (selector: string, args: { type: "uint" | "address" | "string"; value: string | number | bigint }[]) => {
+  const heads: string[] = [];
+  const tails: string[] = [];
+  args.forEach((arg) => {
+    if (arg.type === "string") {
+      const priorTailLength = tails.reduce((sum, tail) => sum + tail.length / 2, 0);
+      heads.push(uintHex(args.length * 32 + priorTailLength));
+      tails.push(stringHex(String(arg.value)));
+    } else if (arg.type === "address") {
+      heads.push(addressHex(String(arg.value)));
+    } else {
+      heads.push(uintHex(arg.value));
+    }
+  });
+  return selector + heads.join("") + tails.join("");
+};
+const parseAmount = (value: string) => {
+  const [whole = "0", fraction = ""] = value.trim().split(".");
+  return BigInt(whole || "0") * 10n ** 18n + BigInt((fraction + "0".repeat(18)).slice(0, 18));
+};
+const quantity = (value: bigint) => `0x${value.toString(16)}`;
+const decodeBool = (hex: string) => BigInt(`0x${stripHex(hex) || "0"}`) !== 0n;
+const decodeString = (hex: string) => {
+  const data = stripHex(hex);
+  if (!data || data.length < 128) return "";
+  const offset = Number(BigInt(`0x${data.slice(0, 64)}`)) * 2;
+  const length = Number(BigInt(`0x${data.slice(offset, offset + 64)}`)) * 2;
+  const body = data.slice(offset + 64, offset + 64 + length);
+  const bytes = new Uint8Array((body.match(/.{1,2}/g) || []).map((byte) => parseInt(byte, 16)));
+  return new TextDecoder().decode(bytes);
+};
+const decodeUintArray = (hex: string) => {
+  const data = stripHex(hex);
+  if (!data || data.length < 128) return [] as bigint[];
+  const offset = Number(BigInt(`0x${data.slice(0, 64)}`)) * 2;
+  const length = Number(BigInt(`0x${data.slice(offset, offset + 64)}`));
+  return Array.from({ length }, (_, i) => BigInt(`0x${data.slice(offset + 64 + i * 64, offset + 128 + i * 64)}`));
+};
+const decodeFriendRequest = (hex: string) => {
+  const data = stripHex(hex).padEnd(256, "0");
+  return {
+    from: `0x${data.slice(24, 64)}`,
+    to: `0x${data.slice(88, 128)}`,
+    status: Number(BigInt(`0x${data.slice(128, 192)}`)),
+    sentAt: Number(BigInt(`0x${data.slice(192, 256)}`)),
+  };
+};
 
 const Avatar: React.FC<{ name: string; size?: number }> = ({ name, size = 42 }) => (
   <div
