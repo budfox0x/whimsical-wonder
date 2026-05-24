@@ -587,7 +587,7 @@ export default function ChatUIPage() {
             <div ref={bodyRef} className="flex-1 bg-brand-bg overflow-y-auto px-4 py-4 space-y-3">
               {!showChat && <div className="h-full flex items-center justify-center text-brand-text-muted text-sm">Select a chat to start messaging</div>}
 
-              {tab === "global" && posts.map((post) => (
+              {tab === "global" && [...posts].sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0)).map((post) => (
                 <div key={post.id} className="flex justify-start">
                   <div className="relative max-w-[760px] w-fit rounded-lg border border-brand-border bg-brand-surface px-3 py-3 text-sm text-brand-text-primary">
                     {post.bountyActive && <div className="absolute right-3 top-3 text-emerald-400" title="Bounty active">💰</div>}
@@ -598,10 +598,10 @@ export default function ChatUIPage() {
                     <div className="mt-2 whitespace-pre-wrap break-words leading-relaxed">{post.content}</div>
                     <div className="mt-3 flex items-center gap-3 text-xs text-brand-text-muted">
                       <button disabled={busy || post.liked} onClick={() => likePost(post)} className={cn("inline-flex items-center gap-1 hover:text-brand-text-primary disabled:cursor-default", post.liked && "opacity-50")}><Heart size={14} /> {post.likeCount}</button>
-                      <button onClick={() => setCommentOpen(commentOpen === post.id ? null : post.id)} className="inline-flex items-center gap-1 hover:text-brand-text-primary"><MessageSquare size={14} /> {post.commentCount}</button>
+                      <button disabled={busy || commentedPosts[post.id]} onClick={() => setCommentOpen(commentOpen === post.id ? null : post.id)} className={cn("inline-flex items-center gap-1 hover:text-brand-text-primary disabled:cursor-default", commentedPosts[post.id] && "opacity-50")}><MessageSquare size={14} /> {post.commentCount}</button>
                       <button onClick={() => sharePost(post)} className="inline-flex items-center gap-1 hover:text-brand-text-primary"><Share2 size={14} /> Share</button>
                     </div>
-                    {commentOpen === post.id && (
+                    {commentOpen === post.id && !commentedPosts[post.id] && (
                       <div className="mt-3 flex items-center gap-2 border-t border-brand-border pt-3">
                         <input value={commentDraft} onChange={(e) => setCommentDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") commentPost(post.id); }} placeholder="Write a comment" className="min-w-0 flex-1 h-9 rounded-md bg-brand-bg border border-brand-border px-3 text-sm text-brand-text-primary placeholder:text-brand-text-muted outline-none" />
                         <IconBtn aria-label="Send comment" disabled={busy} onClick={() => commentPost(post.id)}><Send size={16} /></IconBtn>
