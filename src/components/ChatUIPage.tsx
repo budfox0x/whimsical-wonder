@@ -280,6 +280,13 @@ export default function ChatUIPage() {
             liked = decodeBool(await readContract(HUB_POSTS_ADDRESS, data));
           } catch { /* keep backend value */ }
         }
+        const commentsRaw = Array.isArray(p.comments) ? p.comments : [];
+        const comments: Comment[] = commentsRaw.map((c: any) => ({
+          commenter: c.commenter || c.from || c.wallet || c.author || "",
+          text: c.text || c.content || c.message || "",
+          timestamp: c.timestamp || c.createdAt || c.ts,
+          name: c.name || c.litName,
+        }));
         return {
           id,
           postId: id,
@@ -288,9 +295,10 @@ export default function ChatUIPage() {
           content: p.content || p.message || p.text || "",
           timestamp: p.timestamp || p.createdAt || p.ts,
           likeCount: Number(p.likeCount ?? p.likes ?? 0),
-          commentCount: Number(p.commentCount ?? p.comments ?? 0),
+          commentCount: Number(p.commentCount ?? p.comments?.length ?? 0),
           bountyActive: Boolean(p.bountyActive || p.hasBounty || p.bounty),
           liked,
+          comments,
         };
       }));
       console.log("[ChatUI] mapped posts:", mapped);
