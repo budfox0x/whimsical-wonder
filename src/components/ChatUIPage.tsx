@@ -353,8 +353,7 @@ export default function ChatUIPage() {
     if (post.liked) return;
     setBusy(true);
     try {
-      const hub = await getSignerContract(HUB_POSTS_ADDRESS, HUB_POSTS_ABI);
-      await (await hub.likePost(post.postId)).wait();
+      await writeContract(HUB_POSTS_ADDRESS, encodeCall(SELECTOR.likePost, [{ type: "uint", value: post.postId }]));
       setPosts((list) => list.map((p) => p.id === post.id ? { ...p, liked: true, likeCount: p.likeCount + 1 } : p));
     } finally { setBusy(false); }
   };
@@ -364,8 +363,7 @@ export default function ChatUIPage() {
     if (!text) return;
     setBusy(true);
     try {
-      const hub = await getSignerContract(HUB_POSTS_ADDRESS, HUB_POSTS_ABI);
-      await (await hub.commentPost(postId, text)).wait();
+      await writeContract(HUB_POSTS_ADDRESS, encodeCall(SELECTOR.commentPost, [{ type: "uint", value: postId }, { type: "string", value: text }]));
       setPosts((list) => list.map((p) => p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p));
       setCommentDraft("");
       setCommentOpen(null);
@@ -384,11 +382,10 @@ export default function ChatUIPage() {
     if (!content) return;
     setBusy(true);
     try {
-      const hub = await getSignerContract(HUB_POSTS_ADDRESS, HUB_POSTS_ABI);
-      const likeWei = addBounty ? parseEther(likeReward || "0") : 0n;
-      const commentWei = addBounty ? parseEther(commentReward || "0") : 0n;
-      const budgetWei = addBounty ? parseEther(totalBudget || "0") : 0n;
-      await (await hub.createPost(content, likeWei, commentWei, { value: budgetWei })).wait();
+      const likeWei = addBounty ? parseAmount(likeReward || "0") : 0n;
+      const commentWei = addBounty ? parseAmount(commentReward || "0") : 0n;
+      const budgetWei = addBounty ? parseAmount(totalBudget || "0") : 0n;
+      await writeContract(HUB_POSTS_ADDRESS, encodeCall(SELECTOR.createPost, [{ type: "string", value: content }, { type: "uint", value: likeWei }, { type: "uint", value: commentWei }]), budgetWei);
       setDraft("");
       setPostContent("");
       setCreateOpen(false);
