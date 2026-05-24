@@ -207,13 +207,24 @@ export default function ChatUIPage() {
     }
   }, []);
 
-  const getSignerContract = useCallback(async (address: string, abi: string[]) => {
+  const readContract = useCallback(async (address: string, data: string) => {
+    const result = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: address, data }, "latest"] }),
+    });
+    const json = await result.json();
+    if (json.error) throw new Error(json.error.message || "Contract read failed");
+    return json.result as string;
+  }, []);
+
+  const writeContract = useCallback(async (address: string, data: string, value = 0n) => {
     const eth: any = (window as any).ethereum;
     if (!eth) throw new Error("Wallet not found");
     await ensureChain();
-    await eth.request({ method: "eth_requestAccounts" });
-    const provider = new BrowserProvider(eth);
-    return new Contract(address, abi, await provider.getSigner());
+    const [from] = await eth.request({ method: "eth_requestAccounts" });
+    const hash = await eth.request({ method: "eth_sendTransaction", params: [{ from, to: address, data, value: quantity(value) }] });
+    return hash as string;
   }, [ensureChain]);
 
   const resolveName = useCallback(async (address: string) => {
@@ -221,15 +232,14 @@ export default function ChatUIPage() {
     const key = address.toLowerCase();
     if (namesRef.current[key]) return namesRef.current[key];
     try {
-      const provider = new BrowserProvider((window as any).ethereum);
-      const registry = new Contract(LIT_REGISTRY_ADDRESS, LIT_REGISTRY_ABI, provider);
-      const name = await registry.reverseResolve(address);
+      const data = encodeCall(SELECTOR.reverseResolve, [{ type: "address", value: address }]);
+      const name = decodeString(await readContract(LIT_REGISTRY_ADDRESS, data));
       namesRef.current[key] = name || short(address);
     } catch {
       namesRef.current[key] = short(address);
     }
     return namesRef.current[key];
-  }, []);
+  }, [readContract]);
 
   const mapContact = useCallback(async (item: any): Promise<Contact | null> => {
     const address = typeof item === "string" ? item : item.address || item.wallet || item.walletAddress || item.friend || item.from || item.to || "";
@@ -259,9 +269,8 @@ export default function ChatUIPage() {
         let liked = Boolean(p.liked || p.hasLiked);
         if (wallet && !liked) {
           try {
-            const provider = new BrowserProvider((window as any).ethereum);
-            const hub = new Contract(HUB_POSTS_ADDRESS, HUB_POSTS_ABI, provider);
-            liked = await hub.hasLiked(id, wallet);
+            const data = encodeCall(SELECTOR.hasLiked, [{ type: "uint", value: id }, { type: "address", value: wallet }]);
+            liked = decodeBool(await readContract(HUB_POSTS_ADDRESS, data));
           } catch { /* keep backend value */ }
         }
         return {
@@ -294,13 +303,10 @@ export default function ChatUIPage() {
     } catch { setContacts([]); }
 
     try {
-      const messenger = new Contract(MESSENGER_ADDRESS, MESSENGER_ABI, new BrowserProvider((window as any).ethereum));
-      const ids: bigint[] = await messenger.getPendingRequests(wallet);
+      const ids = decodeUintArray(await readContract(MESSENGER_ADDRESS, encodeCall(SELECTOR.getPendingRequests, [{ type: "address", value: wallet }])));
       const requests = await Promise.all(ids.map(async (id) => {
-        const req = await messenger.friendRequests(id);
-        const from = String(req.from || req[0] || "");
-        const to = String(req.to || req[1] || "");
-        return { id: id.toString(), from, to, status: Number(req.status ?? req[2] ?? 0), sentAt: Number(req.sentAt ?? req[3] ?? 0), name: await resolveName(from) };
+        const req = decodeFriendRequest(await readContract(MESSENGER_ADDRESS, encodeCall(SELECTOR.friendRequests, [{ type: "uint", value: id }])));
+        return { id: id.toString(), from: req.from, to: req.to, status: req.status, sentAt: req.sentAt, name: await resolveName(req.from) };
       }));
       setPending(requests.filter((req) => req.from.toLowerCase() !== wallet.toLowerCase()));
     } catch { setPending([]); }
