@@ -392,12 +392,22 @@ export default function ChatUIPage() {
       const j = await r.json();
       const p = j.post || j.data || j;
       if (!p) return;
+      const commentsRaw = Array.isArray(p.comments) ? p.comments : null;
+      const comments: Comment[] | undefined = commentsRaw
+        ? commentsRaw.map((c: any) => ({
+            commenter: c.commenter || c.from || c.wallet || c.author || "",
+            text: c.text || c.content || c.message || "",
+            timestamp: c.timestamp || c.createdAt || c.ts,
+            name: c.name || c.litName,
+          }))
+        : undefined;
       setPosts((list) => list.map((it) => it.id === postId ? {
         ...it,
         content: p.content ?? it.content,
         likeCount: Number(p.likeCount ?? p.likes ?? it.likeCount),
-        commentCount: Number(p.commentCount ?? p.comments ?? it.commentCount),
+        commentCount: Number(p.commentCount ?? (comments ? comments.length : it.commentCount)),
         bountyActive: Boolean(p.bountyActive ?? p.hasBounty ?? it.bountyActive),
+        comments: comments ?? it.comments,
       } : it));
     } catch (err) { console.error("[ChatUI] refreshPost error:", err); }
   }, []);
