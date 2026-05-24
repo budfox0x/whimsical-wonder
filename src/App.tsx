@@ -55,8 +55,9 @@ import { litvmChain, errMsg, LITDEX_DEPLOYER_ADDRESS, readTotalDeployed, deployT
 import { showSuccess, showError, showInfo, refreshPoints } from './lib/feedback';
 
 // --- Types ---
-type PageID = 'swap' | 'pool' | 'deploy' | 'points' | 'checkin' | 'nfts' | 'messenger' | 'quests' | 'games' | 'faucet' | 'hub';
+type PageID = 'swap' | 'pool' | 'deploy' | 'points' | 'checkin' | 'nfts' | 'messenger' | 'quests' | 'games' | 'faucet' | 'hub' | 'chatui';
 import HubPage from './components/HubPage';
+import ChatUIPage from './components/ChatUIPage';
 
 interface NavItemProps {
   icon: any;
